@@ -1,8 +1,8 @@
 package main
 
 import (
+	"database/sql"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,58 +31,127 @@ func main() {
 }
 
 func getAlbums(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, albums)
+	allAlbums := []album{}
+
+	db := GetConnection()
+	defer db.Close()
+
+	rows, err := db.Query("SELECT * FROM main.albums")
+	defer rows.Close()
+
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"message": err})
+		return
+	}
+
+	for rows.Next() {
+		var album album
+
+		err := rows.Scan(&album.Id, &album.Title, &album.Artist, &album.Price)
+
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err})
+			return
+		}
+
+		allAlbums = append(allAlbums, album)
+	}
+
+	c.JSON(http.StatusOK, allAlbums)
 }
 
 func postAlbums(c *gin.Context) {
 	var newAlbum album
 
 	if err := c.BindJSON(&newAlbum); err != nil {
-		c.IndentedJSON(http.StatusForbidden, gin.H{"message": "Cannot Process!"})
+		c.JSON(http.StatusForbidden, gin.H{"message": "Cannot Process!"})
 		return
 	}
 
-	albums = append(albums, newAlbum)
-	c.IndentedJSON(http.StatusCreated, newAlbum)
+	db := GetConnection()
+	defer db.Close()
+
+	err := db.QueryRow("INSERT INTO main.albums (title, artist, price) VALUES ($1, $2, $3) RETURNING id", newAlbum.Title, newAlbum.Artist, newAlbum.Price).Scan(&newAlbum.Id)
+
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"message": err})
+		return
+	}
+
+	err = db.QueryRow("SELECT * FROM main.albums WHERE id = $1", newAlbum.Id).Scan(&newAlbum.Id, &newAlbum.Title, &newAlbum.Artist, &newAlbum.Title)
+
+	switch {
+	case err == sql.ErrNoRows:
+		c.JSON(http.StatusNotFound, gin.H{"message": "Album Not Found!"})
+		return
+	case err != nil:
+		c.JSON(http.StatusForbidden, gin.H{"message": err})
+		return
+	default:
+		c.JSON(http.StatusCreated, newAlbum)
+		return
+	}
 }
 
 func getAlbumById(c *gin.Context) {
+	var album album
 	id := c.Param("id")
-	int_id, err := strconv.ParseInt(id, 10, 8)
 
-	if err != nil {
-		c.IndentedJSON(http.StatusForbidden, gin.H{"message": "Cannot Process!"})
+	db := GetConnection()
+	defer db.Close()
+
+	err := db.QueryRow("SELECT * FROM main.albums WHERE id = $1", id).Scan(&album.Id, &album.Title, &album.Artist, &album.Price)
+
+	switch {
+	case err == sql.ErrNoRows:
+		c.JSON(http.StatusNotFound, gin.H{"message": "Album Not Found!"})
+		return
+	case err != nil:
+		c.JSON(http.StatusForbidden, gin.H{"message": err})
+		return
+	default:
+		c.JSON(http.StatusOK, album)
 		return
 	}
-
-	for _, album := range albums {
-		if album.Id == uint8(int_id) {
-			c.IndentedJSON(http.StatusOK, album)
-			return
-		}
-	}
-
-	c.IndentedJSON(http.StatusNotFound, gin.H{"message": "Album Not Found!"})
 }
 
 func deleteAlbumById(c *gin.Context) {
-	var deleted_idx int
-
+	var album album
 	id := c.Param("id")
-	int_id, err := strconv.ParseInt(id, 10, 8)
 
-	if err != nil {
-		c.IndentedJSON(http.StatusForbidden, gin.H{"message": "Cannot Process!"})
+	db := GetConnection()
+	defer db.Close()
+
+	err := db.QueryRow("SELECT * FROM main.albums WHERE id = $1", id).Scan(&album.Id, &album.Title, &album.Artist, &album.Price)
+
+	switch {
+	case err == sql.ErrNoRows:
+		c.JSON(http.StatusNotFound, gin.H{"message": "Album Not Found!"})
+		return
+	case err != nil:
+		c.JSON(http.StatusForbidden, gin.H{"message": err})
+		return
+	default:
+		result, err := db.Exec("DELETE FROM main.albums WHERE id = $1", id)
+
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err})
+			return
+		}
+
+		rows, err := result.RowsAffected()
+
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err})
+			return
+		}
+
+		if rows != 1 {
+			c.JSON(http.StatusForbidden, gin.H{"message": err})
+			return
+		}
+
+		c.JSON(http.StatusOK, album)
 		return
 	}
-
-	for idx, album := range albums {
-		if album.Id == uint8(int_id) {
-			deleted_idx = idx
-		}
-	}
-
-	albums = append(albums[:deleted_idx], albums[deleted_idx+1:]...)
-
-	c.IndentedJSON(http.StatusOK, albums)
 }
