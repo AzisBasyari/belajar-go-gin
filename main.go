@@ -24,6 +24,7 @@ func main() {
 	router := gin.Default()
 	router.GET("/albums", getAlbums)
 	router.POST("/albums", postAlbums)
+	router.PUT("/albums", updateAlbumById)
 	router.GET("/album/:id", getAlbumById)
 	router.DELETE("/album/:id", deleteAlbumById)
 
@@ -64,7 +65,7 @@ func postAlbums(c *gin.Context) {
 	var newAlbum album
 
 	if err := c.BindJSON(&newAlbum); err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"message": "Cannot Process!"})
+		c.JSON(http.StatusForbidden, gin.H{"message": err})
 		return
 	}
 
@@ -78,7 +79,7 @@ func postAlbums(c *gin.Context) {
 		return
 	}
 
-	err = db.QueryRow("SELECT * FROM main.albums WHERE id = $1", newAlbum.Id).Scan(&newAlbum.Id, &newAlbum.Title, &newAlbum.Artist, &newAlbum.Title)
+	err = db.QueryRow("SELECT * FROM main.albums WHERE id = $1", newAlbum.Id).Scan(&newAlbum.Id, &newAlbum.Title, &newAlbum.Artist, &newAlbum.Price)
 
 	switch {
 	case err == sql.ErrNoRows:
@@ -153,5 +154,54 @@ func deleteAlbumById(c *gin.Context) {
 
 		c.JSON(http.StatusOK, album)
 		return
+	}
+}
+
+func updateAlbumById(c *gin.Context) {
+	var updatedAlbum album
+
+	if err := c.BindJSON(&updatedAlbum); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"message": err})
+		return
+	}
+
+	if updatedAlbum.Id == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"message": "Required Id of Album"})
+		return
+	}
+
+	db := GetConnection()
+	defer db.Close()
+
+	err := db.QueryRow("SELECT id FROM main.albums WHERE id = $1", updatedAlbum.Id).Scan(&updatedAlbum.Id)
+
+	switch {
+	case err == sql.ErrNoRows:
+		c.JSON(http.StatusNotFound, gin.H{"message": "Album Not Found!"})
+		return
+	case err != nil:
+		c.JSON(http.StatusForbidden, gin.H{"message": err})
+		return
+	default:
+		result, err := db.Exec("UPDATE main.albums SET title = $1, artist = $2, price = $3 WHERE id = $4", updatedAlbum.Title, updatedAlbum.Artist, updatedAlbum.Price, updatedAlbum.Id)
+
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err})
+			return
+		}
+
+		rows, err := result.RowsAffected()
+
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err})
+			return
+		}
+
+		if rows != 1 {
+			c.JSON(http.StatusForbidden, gin.H{"message": "Expected to affect 1 row"})
+			return
+		}
+
+		c.JSON(http.StatusOK, updatedAlbum)
 	}
 }
