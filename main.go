@@ -21,12 +21,21 @@ var albums = []album{
 }
 
 func main() {
+	dbORM := GetConnectionORM()
+	doMigration(dbORM)
+
 	router := gin.Default()
-	router.GET("/albums", getAlbums)
-	router.POST("/albums", postAlbums)
-	router.PUT("/albums", updateAlbumById)
-	router.GET("/album/:id", getAlbumById)
-	router.DELETE("/album/:id", deleteAlbumById)
+
+	// Raw Query using pq
+	// router.GET("/albums", getAlbums)
+	// router.POST("/albums", postAlbums)
+	// router.PUT("/albums", updateAlbumById)
+	// router.GET("/album/:id", getAlbumById)
+	// router.DELETE("/album/:id", deleteAlbumById)
+
+	// ORM using GORM
+	router.GET("/albums", getAlbumsORM)
+	router.POST("/albums", postAlbumsORM)
 
 	router.Run("localhost:8080")
 }
@@ -204,4 +213,43 @@ func updateAlbumById(c *gin.Context) {
 
 		c.JSON(http.StatusOK, updatedAlbum)
 	}
+}
+
+func getAlbumsORM(c *gin.Context) {
+	allAlbums := []Album{}
+	dbORM := GetConnectionORM()
+
+	result := dbORM.Find(&allAlbums)
+
+	if result.Error != nil {
+		c.JSON(http.StatusForbidden, gin.H{"message": result.Error})
+		return
+	}
+
+	c.JSON(http.StatusOK, allAlbums)
+}
+
+func postAlbumsORM(c *gin.Context) {
+	var newAlbum Album
+
+	if err := c.BindJSON(&newAlbum); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"message": err})
+		return
+	}
+
+	dbORM := GetConnectionORM()
+
+	result := dbORM.Create(&newAlbum)
+
+	if result.Error != nil {
+		c.JSON(http.StatusForbidden, gin.H{"message": result.Error})
+		return
+	}
+
+	// if result.Error != nil {
+	// 	c.JSON(http.StatusForbidden, gin.H{"message": result.Error})
+	// 	return
+	// }
+
+	c.JSON(http.StatusCreated, newAlbum)
 }
